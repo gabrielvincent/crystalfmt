@@ -72,14 +72,7 @@ func main() {
 }
 
 func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
-
-	prev := node.PrevSibling()
-	if prev != nil && prev.Type() != "require" {
-		f.writeByte('\n')
-	}
-
 	isEmpty := true
-
 	foreachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
 		case "def":
@@ -107,11 +100,6 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 			f.writeString("end")
 		}
 	})
-
-	next := node.NextSibling()
-	if next != nil && next.Type() != "method_def" {
-		f.writeByte('\n')
-	}
 }
 
 func (f *Formatter) formatRequire(node *sitter.Node) {
@@ -124,10 +112,6 @@ func (f *Formatter) formatRequire(node *sitter.Node) {
 			f.formatString(ch)
 		}
 	})
-
-	if node.NextSibling().Type() != "require" {
-		f.b.WriteString("\n")
-	}
 }
 
 func (f *Formatter) formatString(node *sitter.Node) {
