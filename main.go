@@ -65,9 +65,10 @@ func main() {
 			fmt.Printf("Failed to write file: %v\n", err)
 			os.Exit(1)
 		}
+	} else {
+		fmt.Println(string(formatted))
 	}
 
-	fmt.Println(string(formatted))
 }
 
 func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
@@ -76,6 +77,8 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 	if prev != nil && prev.Type() != "require" {
 		f.writeByte('\n')
 	}
+
+	isEmpty := true
 
 	foreachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
@@ -87,11 +90,20 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 		case "(", ")":
 			f.writeContent(ch)
 		case "expressions":
+			isEmpty = false
 			f.writeByte('\n')
 			f.formatNode(ch, indent+INDENT_SIZE)
+		case "comment":
+			isEmpty = false
+			f.writeByte('\n')
+			f.formatNode(ch, indent+INDENT_SIZE)
+			f.writeByte('\n')
 		case "param_list":
 			f.formatParams(ch)
 		case "end":
+			if isEmpty {
+				f.writeByte('\n')
+			}
 			f.writeString("end")
 		}
 	})
@@ -143,7 +155,31 @@ func (f *Formatter) formatInterpolation(node *sitter.Node) {
 }
 
 func (f *Formatter) formatLiteral(node *sitter.Node) {
-	f.b.WriteString(node.Content(f.source))
+	f.writeContent(node)
+}
+
+func (f *Formatter) formatComment(node *sitter.Node) {
+	cmtVal := f.getContent(node)
+
+	// If the comment already has a space after '#', write it as is
+	if len(cmtVal) >= 2 && cmtVal[0] == '#' && cmtVal[1] == ' ' {
+		f.writeString(cmtVal)
+		return
+	}
+
+	// If the comment starts with '#' but doesn't have a space after it
+	if len(cmtVal) >= 1 && cmtVal[0] == '#' {
+		// Write '#' followed by a space, then the rest of the comment
+		f.writeByte('#')
+		f.writeByte(' ')
+		if len(cmtVal) > 1 {
+			f.writeString(cmtVal[1:])
+		}
+		return
+	}
+
+	// In case the comment doesn't start with '#' (shouldn't happen but for safety)
+	f.writeString(cmtVal)
 }
 
 func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
@@ -218,42 +254,6 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 	})
 }
 
-// getAbsPosition converts a Tree-sitter Point (line, column) to an absolute byte position
-// in the source code. It requires a pre-computed array of line start positions.
-func getAbsPosition(sp sitter.Point, lineStartPositions []int) int {
-	// If we have an invalid point or empty lineStartPositions, return 0
-	if len(lineStartPositions) == 0 {
-		return 0
-	}
-
-	// Make sure we don't go out of bounds
-	if int(sp.Row) >= len(lineStartPositions) {
-		// Return the last position if the row is beyond our line count
-		return lineStartPositions[len(lineStartPositions)-1]
-	}
-
-	// Get the starting position of the line
-	lineStart := lineStartPositions[sp.Row]
-
-	// Add the column offset to get the absolute position
-	return lineStart + int(sp.Column)
-}
-
-// Helper function to build the line start positions array
-// This should be called once when loading the source code
-func buildLineStartPositions(source []byte) []int {
-	positions := []int{0} // First line always starts at position 0
-
-	for i := range source {
-		// If we find a newline character, the next line starts at i+1
-		if source[i] == '\n' {
-			positions = append(positions, i+1)
-		}
-	}
-
-	return positions
-}
-
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 	foreachChild(node, func(ch *sitter.Node) {
 		// Count consecutive newlines before this node
@@ -280,11 +280,6 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 		f.formatNode(ch, indent)
 		f.writeByte('\n')
 	})
-}
-
-// Helper function to check for whitespace
-func isWhitespace(b byte) bool {
-	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
 // Recursive function to format the syntax tree
@@ -332,6 +327,10 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "identifier":
 		f.writeContent(node)
 
+	case "comment":
+		f.writeIndent(indent)
+		f.formatComment(node)
+
 	default:
 		// Fallback to just printing the raw source content for unknown types
 		f.writeContent(node)
@@ -356,9 +355,54 @@ func (f *Formatter) writeByte(b byte) {
 	f.b.WriteByte(b)
 }
 
+func (f *Formatter) getContent(node *sitter.Node) string {
+	return node.Content(f.source)
+}
+
 func foreachChild(node *sitter.Node, fn func(ch *sitter.Node)) {
 	for idx := range node.ChildCount() {
 		ch := node.Child(int(idx))
 		fn(ch)
 	}
+}
+
+// Helper function to check for whitespace
+func isWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+// getAbsPosition converts a Tree-sitter Point (line, column) to an absolute byte position
+// in the source code. It requires a pre-computed array of line start positions.
+func getAbsPosition(sp sitter.Point, lineStartPositions []int) int {
+	// If we have an invalid point or empty lineStartPositions, return 0
+	if len(lineStartPositions) == 0 {
+		return 0
+	}
+
+	// Make sure we don't go out of bounds
+	if int(sp.Row) >= len(lineStartPositions) {
+		// Return the last position if the row is beyond our line count
+		return lineStartPositions[len(lineStartPositions)-1]
+	}
+
+	// Get the starting position of the line
+	lineStart := lineStartPositions[sp.Row]
+
+	// Add the column offset to get the absolute position
+	return lineStart + int(sp.Column)
+}
+
+// Helper function to build the line start positions array
+// This should be called once when loading the source code
+func buildLineStartPositions(source []byte) []int {
+	positions := []int{0} // First line always starts at position 0
+
+	for i := range source {
+		// If we find a newline character, the next line starts at i+1
+		if source[i] == '\n' {
+			positions = append(positions, i+1)
+		}
+	}
+
+	return positions
 }
