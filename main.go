@@ -240,6 +240,7 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 	foreachChild(node, func(ch *sitter.Node) {
+		fmt.Println("--- ", ch.Type())
 		// Count consecutive newlines before this node
 		pos := getAbsPosition(ch.StartPoint(), lineStartPositions) - 1
 		newlineCount := 0
@@ -262,6 +263,16 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 
 		f.writeIndent(indent)
 		f.formatNode(ch, indent)
+
+		next := ch.NextSibling()
+		if next != nil && next.Type() == "comment" {
+			pos := getAbsPosition(next.StartPoint(), lineStartPositions) - 1
+			if f.source[pos] != '\n' {
+				f.b.WriteByte(' ')
+				return
+			}
+		}
+
 		f.writeByte('\n')
 	})
 }
@@ -312,7 +323,6 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.writeContent(node)
 
 	case "comment":
-		f.writeIndent(indent)
 		f.formatComment(node)
 
 	default:
