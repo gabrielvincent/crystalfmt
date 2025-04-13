@@ -94,6 +94,31 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 		case "param_list":
 			f.formatParams(ch)
 		case "end":
+			f.writeIndent(indent)
+			if isEmpty {
+				f.writeByte('\n')
+			}
+			f.writeString("end")
+		}
+	})
+}
+
+func (f *Formatter) formatClass(node *sitter.Node, indent int) {
+	isEmpty := true
+	foreachChild(node, func(ch *sitter.Node) {
+		switch ch.Type() {
+		case "class":
+			f.writeString("class")
+			f.writeByte(' ')
+		case "constant":
+			f.writeContent(ch)
+		case "identifier":
+			f.writeContent(ch)
+		case "expressions":
+			isEmpty = false
+			f.writeByte('\n')
+			f.formatNode(ch, indent+INDENT_SIZE)
+		case "end":
 			if isEmpty {
 				f.writeByte('\n')
 			}
@@ -240,7 +265,6 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 	foreachChild(node, func(ch *sitter.Node) {
-		fmt.Println("--- ", ch.Type())
 		// Count consecutive newlines before this node
 		pos := getAbsPosition(ch.StartPoint(), lineStartPositions) - 1
 		newlineCount := 0
@@ -264,6 +288,7 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 		f.writeIndent(indent)
 		f.formatNode(ch, indent)
 
+		// Preserve inline comments
 		next := ch.NextSibling()
 		if next != nil && next.Type() == "comment" {
 			pos := getAbsPosition(next.StartPoint(), lineStartPositions) - 1
@@ -295,6 +320,9 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	// fmt.Println("--- ", node.Type())
 
 	switch node.Type() {
+	case "class_def":
+		f.formatClass(node, indent)
+
 	case "method_def":
 		f.formatMethod(node, indent)
 
