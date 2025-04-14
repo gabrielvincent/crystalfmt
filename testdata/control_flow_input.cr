@@ -1,3 +1,15 @@
+# Simple if
+if "macaxeira" == "mandioca"
+puts "grila"
+end
+
+# Nested if
+if 420 == 69
+if "cardboard" != "bazooka"
+    puts "farofa"
+end
+end
+
 # Simple if/esle
 if do_stuff?
 puts "gonna do stuffs..."

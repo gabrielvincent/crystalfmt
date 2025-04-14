@@ -20,9 +20,9 @@ func TestFormatter(t *testing.T) {
 		}
 
 		// Only process input files
-		if !info.IsDir() && strings.HasSuffix(path, ".input") {
-			basePath := strings.TrimSuffix(path, ".input")
-			expectedPath := basePath + ".expected"
+		if !info.IsDir() && strings.HasSuffix(path, "_input.cr") {
+			basePath := strings.TrimSuffix(path, "_input.cr")
+			expectedPath := basePath + "_expected.cr"
 
 			// Run this specific test case
 			runFormatTest(t, path, expectedPath)
@@ -38,7 +38,7 @@ func TestFormatter(t *testing.T) {
 
 func runFormatTest(t *testing.T, inputPath, expectedPath string) {
 	// Extract test name for better error reporting
-	testName := filepath.Base(strings.TrimSuffix(inputPath, ".input"))
+	testName := filepath.Base(strings.TrimSuffix(inputPath, "_input.cr"))
 
 	// Create a subtest for each test case
 	t.Run(testName, func(t *testing.T) {
