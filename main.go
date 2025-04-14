@@ -10,7 +10,7 @@ import (
 	"github.com/smacker/go-tree-sitter/crystal"
 )
 
-var INDENT_SIZE = 2
+var INDENT_SIZE = 4
 
 type Formatter struct {
 	strBuilder         *strings.Builder
@@ -18,8 +18,6 @@ type Formatter struct {
 	lineStartPositions []int
 	indentSize         int
 }
-
-var lineStartPositions []int
 
 func main() {
 	if len(os.Args) < 2 {
@@ -80,18 +78,30 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 	f.writeString("def ")
 	f.formatNode(nameNode, indent)
 
-	if paramsNode := node.ChildByFieldName("params"); paramsNode != nil {
+	paramsNode := node.ChildByFieldName("params")
+	if paramsNode != nil {
 		f.writeByte('(')
 		f.formatNode(paramsNode, indent)
 		f.writeByte(')')
 	}
 
-	if bodyNode := node.ChildByFieldName("body"); bodyNode != nil {
-		f.writeCLRF()
-		f.formatNode(bodyNode, indent+f.indentSize)
-	}
+	forEachChild(node, func(ch *sitter.Node) {
+		switch ch.Type() {
+		case "comment":
+			f.writeLF()
+			f.writeIndent(indent + f.indentSize)
+			f.formatNode(ch, indent+f.indentSize)
+		case "expressions":
+			f.writeLF()
+			f.formatNode(ch, indent+f.indentSize)
+		case "(", ")":
+			if paramsNode == nil {
+				f.writeContent(ch)
+			}
+		}
+	})
 
-	f.writeCLRF()
+	f.writeLF()
 	f.writeIndent(indent)
 	f.writeString("end")
 }
@@ -110,11 +120,11 @@ func (f *Formatter) formatClass(node *sitter.Node, indent int) {
 	}
 
 	if bodyNode := node.ChildByFieldName("body"); bodyNode != nil {
-		f.writeCLRF()
+		f.writeLF()
 		f.formatNode(bodyNode, indent+f.indentSize)
 	}
 
-	f.writeCLRF()
+	f.writeLF()
 	f.writeIndent(indent)
 	f.writeString("end")
 }
@@ -267,15 +277,13 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 
-	idx := 0
-	forEachChild(node, func(ch *sitter.Node) {
+	forEachChildIdx(node, func(ch *sitter.Node, idx uint32) {
 		if idx > 0 {
-			f.writeCLRF()
+			f.writeLF()
 		}
-		idx++
 
 		// Count consecutive newlines before this node
-		pos := max(getAbsPosition(ch.StartPoint(), lineStartPositions)-1, 0)
+		pos := max(getAbsPosition(ch.StartPoint(), f.lineStartPositions)-1, 0)
 		newlineCount := 0
 
 		// Skip backwards, counting newlines and ignoring other whitespace
@@ -291,7 +299,7 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 
 		// Preserve blank lines (a blank line is represented by 2 consecutive newlines)
 		if newlineCount > 1 {
-			f.writeCLRF()
+			f.writeLF()
 		}
 
 		f.writeIndent(indent)
@@ -300,7 +308,7 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
 		// Preserve inline comments
 		next := ch.NextSibling()
 		if next != nil && next.Type() == "comment" {
-			pos := max(getAbsPosition(next.StartPoint(), lineStartPositions)-1, 0)
+			pos := max(getAbsPosition(next.StartPoint(), f.lineStartPositions)-1, 0)
 			if f.source[pos] != '\n' {
 				f.strBuilder.WriteByte(' ')
 				return
@@ -320,7 +328,6 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 	condNode := node.ChildByFieldName("cond")
 	if condNode != nil {
 		// Write condition
-
 		switch node.Type() {
 		case "if":
 			f.writeString("if")
@@ -331,10 +338,19 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 
 		f.formatNode(condNode, indent)
 
+		forEachChild(node, func(ch *sitter.Node) {
+			if ch.Type() == "comment" {
+				f.writeLF()
+				f.writeIndent(indent + f.indentSize)
+				f.formatNode(ch, indent)
+			}
+		})
+
 		// Write then
 		if thenNode := node.ChildByFieldName("then"); thenNode != nil {
+
 			forEachChild(thenNode, func(ch *sitter.Node) {
-				f.writeCLRF()
+				f.writeLF()
 				f.writeIndent(indent + f.indentSize)
 				f.formatNode(ch, indent+f.indentSize)
 			})
@@ -345,26 +361,26 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 
 			// Write elsif
 			if elsifCondNode := elseNode.ChildByFieldName("cond"); elsifCondNode != nil {
-				f.writeCLRF()
+				f.writeLF()
 				f.formatIf(elseNode, indent)
 				return
 			}
 
 			// Write else body
-			f.writeCLRF()
+			f.writeLF()
 			f.writeIndent(indent)
 			f.writeString("else")
 			forEachChild(elseNode, func(ch *sitter.Node) {
 				if ch.Type() == "else" {
 					return
 				}
-				f.writeCLRF()
+				f.writeLF()
 				f.formatNode(ch, indent+f.indentSize)
 			})
 		}
 
 		// Write end
-		f.writeCLRF()
+		f.writeLF()
 		f.writeIndent(indent)
 		f.writeString("end")
 	}
@@ -464,7 +480,7 @@ func (f *Formatter) writeByte(b byte) {
 	f.strBuilder.WriteByte(b)
 }
 
-func (f *Formatter) writeCLRF() {
+func (f *Formatter) writeLF() {
 	f.writeByte('\n')
 }
 
@@ -476,6 +492,13 @@ func forEachChild(node *sitter.Node, fn func(ch *sitter.Node)) {
 	for idx := range node.ChildCount() {
 		ch := node.Child(int(idx))
 		fn(ch)
+	}
+}
+
+func forEachChildIdx(node *sitter.Node, fn func(ch *sitter.Node, idx uint32)) {
+	for idx := range node.ChildCount() {
+		ch := node.Child(int(idx))
+		fn(ch, idx)
 	}
 }
 
