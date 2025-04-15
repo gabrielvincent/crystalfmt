@@ -210,13 +210,38 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 
 }
 
+func (f *Formatter) formatIdentifier(node *sitter.Node) {
+	f.writeContent(node)
+}
+
+func (f *Formatter) formatSymbol(node *sitter.Node) {
+	f.writeContent(node)
+}
+
+func (f *Formatter) formatParam(node *sitter.Node) {
+	nameNode := node.ChildByFieldName("name")
+	f.formatNode(nameNode, 0)
+
+	if defaultAssignNode := node.ChildByFieldName("default"); defaultAssignNode != nil {
+		f.writeString(" = ")
+		if defaultRhsNode := defaultAssignNode.NextNamedSibling(); defaultRhsNode != nil {
+			switch defaultRhsNode.Type() {
+			case "expressions":
+				f.formatExpressions(defaultRhsNode, 0, false)
+			default:
+				f.formatNode(defaultRhsNode, 0)
+			}
+		}
+	}
+}
+
 func (f *Formatter) formatParams(node *sitter.Node) {
 	forEachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
 		case "param":
-			f.writeContent(ch)
+			f.formatParam(ch)
 		case ",":
-			f.strBuilder.WriteString(", ")
+			f.writeString(", ")
 		}
 	})
 }
@@ -236,6 +261,28 @@ func (f *Formatter) formatAssign(node *sitter.Node, indent int) {
 }
 
 func (f *Formatter) formatCall(node *sitter.Node, indent int) {
+	forEachChild(node, func(ch *sitter.Node) {
+		if ch.Type() == "argument_list" {
+			var prevType string
+			var firstChildType string
+
+			if ch.PrevSibling() != nil {
+				prevType = ch.PrevSibling().Type()
+			}
+			if ch.ChildCount() > 0 {
+				firstChildType = ch.Child(0).Type()
+			}
+
+			// Check for a method call not using parentheses. If this is the case,
+			// a space is added between the identifier and the next character
+			if prevType == "identifier" && firstChildType != "(" {
+				f.writeByte(' ')
+			}
+		}
+
+		f.formatNode(ch, indent)
+	})
+	return
 
 	if receiver := node.ChildByFieldName("receiver"); receiver != nil {
 		f.formatNode(receiver, indent)
@@ -264,42 +311,58 @@ func (f *Formatter) formatCall(node *sitter.Node, indent int) {
 
 }
 
+func (f *Formatter) formatNamedExpr(node *sitter.Node) {
+	forEachChild(node, func(ch *sitter.Node) {
+		switch ch.Type() {
+		case ":":
+			f.writeString(": ")
+		default:
+			f.formatNode(ch, 0)
+		}
+	})
+}
+
 func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 	forEachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
 		case ",":
 			f.strBuilder.WriteString(", ")
+		case "expressions":
+			f.formatExpressions(ch, 0, false)
+		case "named_expr":
+			f.formatNamedExpr(ch)
 		default:
 			f.formatNode(ch, indent)
 		}
 	})
 }
 
-func (f *Formatter) formatExpressions(node *sitter.Node, indent int) {
-
+func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline bool) {
 	forEachChildIdx(node, func(ch *sitter.Node, idx uint32) {
-		if idx > 0 {
-			f.writeLF()
-		}
-
-		// Count consecutive newlines before this node
-		pos := max(getAbsPosition(ch.StartPoint(), f.lineStartPositions)-1, 0)
-		newlineCount := 0
-
-		// Skip backwards, counting newlines and ignoring other whitespace
-		for pos >= 0 {
-			if f.source[pos] == '\n' {
-				newlineCount++
-			} else if !isWhitespace(f.source[pos]) {
-				// If we hit a non-whitespace character, stop counting
-				break
+		if multiline {
+			if idx > 0 {
+				f.writeLF()
 			}
-			pos--
-		}
 
-		// Preserve blank lines (a blank line is represented by 2 consecutive newlines)
-		if newlineCount > 1 {
-			f.writeLF()
+			// Count consecutive newlines before this node
+			pos := max(getAbsPosition(ch.StartPoint(), f.lineStartPositions)-1, 0)
+			newlineCount := 0
+
+			// Skip backwards, counting newlines and ignoring other whitespace
+			for pos >= 0 {
+				if f.source[pos] == '\n' {
+					newlineCount++
+				} else if !isWhitespace(f.source[pos]) {
+					// If we hit a non-whitespace character, stop counting
+					break
+				}
+				pos--
+			}
+
+			// Preserve blank lines (a blank line is represented by 2 consecutive newlines)
+			if newlineCount > 1 {
+				f.writeLF()
+			}
 		}
 
 		f.writeIndent(indent)
@@ -393,8 +456,6 @@ func (f *Formatter) formatConstant(node *sitter.Node) {
 // Recursive function to format the syntax tree
 func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
-	// fmt.Println("node_type:", node.Type())
-
 	// for idx := range node.ChildCount() {
 	// 	ch := node.Child(int(idx))
 	// 	field := node.FieldNameForChild(int(idx))
@@ -414,7 +475,7 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.formatMethod(node, indent)
 
 	case "expressions":
-		f.formatExpressions(node, indent)
+		f.formatExpressions(node, indent, true)
 
 	case "require":
 		f.formatRequire(node)
@@ -441,7 +502,7 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.formatLiteral(node)
 
 	case "identifier":
-		f.writeContent(node)
+		f.formatIdentifier(node)
 
 	case "comment":
 		f.formatComment(node)
@@ -454,6 +515,9 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
 	case "constant":
 		f.formatConstant(node)
+
+	case "symbol":
+		f.formatSymbol(node)
 
 	default:
 		fmt.Println("--- caught:", node.Type())

@@ -3,7 +3,7 @@ class Animal
 end
 
 # Minimal subclass
-class Animal < Biology
+class Animal    <     Biology
 end
 
 # Class with one method

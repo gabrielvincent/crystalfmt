@@ -19,3 +19,19 @@ end
 def method_with_empty_parentheses()
 # I fear nothing
 end
+
+def another_one_liner(param) param.upcase end
+
+def yet_another(a, b) a + b end
+
+def with_defaults(regular, named_param = "default", another = 123)
+puts regular
+puts named_param
+puts another
+end
+
+with_defaults("regular",named_param:    "non-default value"  , another: 1)
+
+def messy_defaults(a, b= 1, c ="hello"   , d =  42)
+# this is intentionally messy
+end
