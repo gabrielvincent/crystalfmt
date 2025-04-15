@@ -1,7 +1,0 @@
-def method(val=("a".upcase))
-if val != 2 +  (  2 /   4 )
-puts "not"
-    end
-
-puts val
-end
