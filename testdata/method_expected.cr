@@ -39,3 +39,17 @@ with_defaults("regular", named_param: "non-default value", another: 1)
 def messy_defaults(a, b = 1, c = "hello", d = 42)
     # this is intentionally messy
 end
+
+def with_block(&block)
+    yield if 0 == 0
+    puts "Done with block"
+end
+
+with_block do
+    puts "grila"
+end
+
+def messy_yield
+    yield(1, 2, 3)
+    yield
+end
