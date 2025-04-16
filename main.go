@@ -79,7 +79,6 @@ func main() {
 }
 
 func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
-
 	nameNode := node.ChildByFieldName("name")
 
 	f.writeString("def ")
@@ -111,10 +110,10 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 	f.writeLF()
 	f.writeIndent(indent)
 	f.writeString("end")
+
 }
 
 func (f *Formatter) formatClass(node *sitter.Node, indent int) {
-
 	nameNode := node.ChildByFieldName("name")
 
 	f.writeString("class")
@@ -179,74 +178,111 @@ func (f *Formatter) formatLiteral(node *sitter.Node) {
 func (f *Formatter) formatComment(node *sitter.Node) {
 	cmtVal := f.getContent(node)
 
-	// If the comment already has a space after '#', write it as is
-	if len(cmtVal) >= 2 && cmtVal[0] == '#' && cmtVal[1] == ' ' {
-		f.writeString(cmtVal)
-		return
-	}
-
-	// If the comment starts with '#' but doesn't have a space after it
-	if len(cmtVal) >= 1 && cmtVal[0] == '#' {
-		// Write '#' followed by a space, then the rest of the comment
+	// If the comment doesn't have a space after '#'
+	if len(cmtVal) > 1 && cmtVal[0] == '#' && cmtVal[1] != ' ' {
 		f.writeByte('#')
 		f.writeByte(' ')
 		if len(cmtVal) > 1 {
 			f.writeString(cmtVal[1:])
 		}
-		return
+	} else {
+		f.writeString(cmtVal)
 	}
-
-	// In case the comment doesn't start with '#' (shouldn't happen but for safety)
-	f.writeString(cmtVal)
 }
 
-func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
-	hasCurly := false
+func (f *Formatter) formatBlockOneLiner(node *sitter.Node, indent int) {
+	bodyNode := node.ChildByFieldName("body")
 	for ch := range eachChild(node) {
 		switch ch.Type() {
 		case "do":
 			f.writeByte(' ')
 			f.writeContent(ch)
-			if ch.NextSibling().Type() != "|" {
-				f.writeLF()
-			}
 		case "|":
 			next := ch.NextSibling()
 			switch next.Type() {
 			case "param_list":
-				if !hasCurly {
-					f.writeByte(' ')
-				}
+				f.writeByte(' ')
 				f.writeContent(ch)
 			case "expressions":
+				f.formatExpressions(ch, 0, false)
 				f.writeContent(ch)
-				if !hasCurly {
-					f.writeLF()
-				} else {
-					f.writeByte(' ')
-				}
 			}
 		case "{":
-			hasCurly = true
 			f.writeByte(' ')
 			f.writeContent(ch)
-			f.writeByte(' ')
 		case "}":
-			f.writeByte(' ')
 			f.writeContent(ch)
 		case "expressions":
-			if hasCurly {
-				f.formatExpressions(ch, indent, false)
-			} else {
-				f.formatNode(ch, indent+f.indentSize)
-			}
+			f.writeByte(' ')
+			f.formatExpressions(ch, indent, false)
+			f.writeByte(' ')
 		case "end":
-			f.writeLF()
+			if bodyNode == nil {
+				f.writeByte(' ')
+			}
 			f.writeContent(ch)
 		default:
 			f.formatNode(ch, indent)
 		}
+	}
+}
 
+func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
+	var blockDelimiterStart int
+	var blockDelimiterEnd int
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case "do", "{":
+			blockDelimiterStart = getAbsPosition(ch.Range().EndPoint, f.lineStartPositions)
+		case "end", "}":
+			blockDelimiterEnd = getAbsPosition(ch.Range().StartPoint, f.lineStartPositions)
+		}
+	}
+
+	var isMultiline bool
+	idx := blockDelimiterStart
+	for idx < blockDelimiterEnd {
+		if f.source[idx] == '\n' {
+			isMultiline = true
+			break
+		}
+		idx++
+	}
+
+	if !isMultiline {
+		f.formatBlockOneLiner(node, indent)
+		return
+	}
+
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case "do":
+			f.writeByte(' ')
+			f.writeContent(ch)
+		case "|":
+			next := ch.NextSibling()
+			switch next.Type() {
+			case "param_list":
+				f.writeByte(' ')
+				f.writeContent(ch)
+			case "expressions":
+				f.formatExpressions(ch, 0, false)
+				f.writeContent(ch)
+			}
+		case "{":
+			f.writeByte(' ')
+			f.writeContent(ch)
+		case "}":
+			f.writeContent(ch)
+		case "expressions":
+			f.writeLF()
+			f.formatExpressions(ch, indent+f.indentSize, true)
+			f.writeLF()
+		case "end":
+			f.writeContent(ch)
+		default:
+			f.formatNode(ch, indent)
+		}
 	}
 }
 
@@ -382,46 +418,32 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 }
 
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline bool) {
-	for ch, idx := range eachChild(node) {
-		if multiline {
-			if idx > 0 {
-				f.writeLF()
-			}
+	for ch := range eachChild(node) {
+		if prev := ch.PrevSibling(); prev != nil {
+			prevEnd := getAbsPosition(prev.EndPoint(), f.lineStartPositions)
+			currStart := getAbsPosition(ch.StartPoint(), f.lineStartPositions)
+			between := f.source[prevEnd:currStart]
 
-			// Count consecutive newlines before this node
-			pos := max(getAbsPosition(ch.StartPoint(), f.lineStartPositions)-1, 0)
-			newlineCount := 0
+			if ch.Type() == "comment" && countLF(between) == 0 {
+				f.writeByte(' ')
+			} else {
+				switch prev.Type() {
+				case "class_def", "method_def":
+					f.writeLF()
+					f.writeLF()
+				default:
 
-			// Skip backwards, counting newlines and ignoring other whitespace
-			for pos >= 0 {
-				if f.source[pos] == '\n' {
-					newlineCount++
-				} else if !isWhitespace(f.source[pos]) {
-					// If we hit a non-whitespace character, stop counting
-					break
+					f.writeLF()
+					if hasTwoNewlines(between) {
+						f.writeLF()
+					}
 				}
-				pos--
 			}
 
-			// Preserve blank lines (a blank line is represented by 2 consecutive newlines)
-			if newlineCount > 1 {
-				f.writeLF()
-			}
 		}
 
 		f.writeIndent(indent)
 		f.formatNode(ch, indent)
-
-		// Preserve inline comments
-		next := ch.NextSibling()
-		if next != nil && next.Type() == "comment" {
-			pos := max(getAbsPosition(next.StartPoint(), f.lineStartPositions)-1, 0)
-			if f.source[pos] != '\n' {
-				f.strBuilder.WriteByte(' ')
-				continue
-			}
-		}
-
 	}
 }
 
@@ -593,22 +615,6 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	// 	}
 	// }
 
-	// Handle top level expressions
-	if node.Type() == "expressions" && node.Parent() == nil {
-		for ch, idx := range eachChild(node) {
-			if idx == 0 {
-				f.formatNode(ch, indent)
-				continue
-			}
-			if ch.PrevSibling().Type() != "comment" {
-				f.writeLF()
-			}
-			f.writeLF()
-			f.formatNode(ch, indent)
-		}
-		return
-	}
-
 	switch node.Type() {
 	case "class_def":
 		f.formatClass(node, indent)
@@ -776,4 +782,27 @@ func buildLineStartPositions(source []byte) []int {
 	}
 
 	return positions
+}
+
+func hasTwoNewlines(b []byte) bool {
+	count := 0
+	for _, c := range b {
+		if c == '\n' {
+			count++
+			if count >= 2 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func countLF(b []byte) int {
+	count := 0
+	for _, c := range b {
+		if c == '\n' {
+			count++
+		}
+	}
+	return count
 }

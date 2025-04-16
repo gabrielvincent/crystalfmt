@@ -148,3 +148,19 @@ if i == 2
 break
 end
 end
+
+# Block result assigned to variable
+value = twice do |i|
+if i == 1
+break "hello"
+end
+i + 1
+end
+
+# Scurlyful, multi-line block
+twice {|i|
+if i == 1
+break "hello"
+end
+i + 1
+}
