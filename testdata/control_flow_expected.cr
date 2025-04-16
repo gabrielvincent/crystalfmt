@@ -30,4 +30,4 @@ end
 val = yo_yo_dawg ? "zup" : "watcha doing"
 
 # Complex ternary expression that you should probably not be used anyway
-val = is_it ? "yepsies" : are_you_sure ? "definitely" : kinda ? "I give up" : "good"
+val = is_it ? are_you_sure ? "definitely" : kinda ? "I give up" : "good" : "yepsies"
