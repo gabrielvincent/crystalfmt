@@ -453,16 +453,34 @@ func (f *Formatter) formatConditional(node *sitter.Node, indent int) {
 	// 	}
 	// }
 
+	if node.Range().EndPoint.Column > 80 {
+		forEachChild(node, func(ch *sitter.Node) {
+			switch ch.Type() {
+			case "expressions":
+				f.formatExpressions(ch, indent, false)
+			case "?", ":":
+				f.writeLF()
+				f.writeIndent(indent)
+				f.writeByte(' ')
+				f.writeContent(ch)
+				f.writeByte(' ')
+			default:
+				f.formatNode(ch, indent+f.indentSize)
+			}
+		})
+		return
+	}
+
 	forEachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
 		case "expressions":
-			f.formatExpressions(ch, 0, false)
+			f.formatExpressions(ch, indent, false)
 		case "?", ":":
 			f.writeByte(' ')
 			f.writeContent(ch)
 			f.writeByte(' ')
 		default:
-			f.formatNode(ch, 0)
+			f.formatNode(ch, indent)
 		}
 	})
 }
