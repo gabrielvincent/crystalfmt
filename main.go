@@ -201,13 +201,45 @@ func (f *Formatter) formatComment(node *sitter.Node) {
 }
 
 func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
+	hasCurly := false
 	for ch := range eachChild(node) {
 		switch ch.Type() {
 		case "do":
-			f.writeString(" do")
+			f.writeByte(' ')
+			f.writeContent(ch)
+			if ch.NextSibling().Type() != "|" {
+				f.writeLF()
+			}
+		case "|":
+			next := ch.NextSibling()
+			switch next.Type() {
+			case "param_list":
+				if !hasCurly {
+					f.writeByte(' ')
+				}
+				f.writeContent(ch)
+			case "expressions":
+				f.writeContent(ch)
+				if !hasCurly {
+					f.writeLF()
+				} else {
+					f.writeByte(' ')
+				}
+			}
+		case "{":
+			hasCurly = true
+			f.writeByte(' ')
+			f.writeContent(ch)
+			f.writeByte(' ')
+		case "}":
+			f.writeByte(' ')
+			f.writeContent(ch)
 		case "expressions":
-			f.writeLF()
-			f.formatNode(ch, indent+f.indentSize)
+			if hasCurly {
+				f.formatExpressions(ch, indent, false)
+			} else {
+				f.formatNode(ch, indent+f.indentSize)
+			}
 		case "end":
 			f.writeLF()
 			f.writeContent(ch)
@@ -226,9 +258,30 @@ func (f *Formatter) formatSymbol(node *sitter.Node) {
 	f.writeContent(node)
 }
 
+func (f *Formatter) formatBlockParam(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case "&", "identifier":
+			f.writeContent(ch)
+		case "proc_type":
+			f.writeString(" : ")
+			f.formatProcType(ch)
+		}
+	}
+}
+
 func (f *Formatter) formatParam(node *sitter.Node) {
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
 		f.formatNode(nameNode, 0)
+	}
+
+	for typeNode := range eachChildByFieldName(node, "type") {
+		switch typeNode.Type() {
+		case ":":
+			f.writeString(" : ")
+		default:
+			f.formatNode(typeNode, 0)
+		}
 	}
 
 	if defaultAssignNode := node.ChildByFieldName("default"); defaultAssignNode != nil {
@@ -247,11 +300,10 @@ func (f *Formatter) formatParam(node *sitter.Node) {
 func (f *Formatter) formatParams(node *sitter.Node) {
 	for ch := range eachChild(node) {
 		switch ch.Type() {
-		case "block_param":
-			f.writeByte('&')
-			fallthrough
 		case "param":
 			f.formatParam(ch)
+		case "block_param":
+			f.formatBlockParam(ch)
 		case ",":
 			f.writeString(", ")
 		}
@@ -448,18 +500,6 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 }
 
 func (f *Formatter) formatConditional(node *sitter.Node, indent int) {
-
-	// for idx := range node.ChildCount() {
-	// 	field := node.FieldNameForChild(int(idx))
-	// 	if field != "" {
-	// 		fmt.Println("--- field:", field)
-	// 		fieldNode := node.ChildByFieldName(field)
-	// 		forEachChild(fieldNode, func(ch *sitter.Node) {
-	// 			fmt.Println("------ type:", ch.Type())
-	// 		})
-	// 	}
-	// }
-
 	for ch := range eachChild(node) {
 		switch ch.Type() {
 		case "expressions":
@@ -483,7 +523,13 @@ func (f *Formatter) formatYield(node *sitter.Node) {
 		switch ch.Type() {
 		case "yield":
 			f.writeContent(ch)
+		case "argument_list":
+			if ch.Child(0).Type() != "(" {
+				f.writeByte(' ')
+			}
+			f.formatNode(ch, 0)
 		default:
+			f.writeByte(' ')
 			f.formatNode(ch, 0)
 		}
 	}
@@ -498,11 +544,35 @@ func (f *Formatter) formatModifierIf(node *sitter.Node) {
 	f.formatNode(condNode, 0)
 }
 
+func (f *Formatter) formatArray(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case ",":
+			f.writeContent(ch)
+			f.writeByte(' ')
+		default:
+			f.formatNode(ch, 0)
+		}
+	}
+}
+
+func (f *Formatter) formatProcType(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case "->":
+			f.writeByte(' ')
+			f.writeContent(ch)
+			f.writeByte(' ')
+		default:
+			f.formatNode(ch, 0)
+		}
+	}
+}
+
 // Recursive function to format the syntax tree
 func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
-	// for idx := range node.ChildCount() {
-	// 	ch := node.Child(int(idx))
+	// for ch, idx := range eachChild(node) {
 	// 	field := node.FieldNameForChild(int(idx))
 	// 	fmt.Println(strings.Repeat(" ", indent) + node.Type())
 	// 	if field != "" {
@@ -511,6 +581,17 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	// 	f.formatNode(ch, indent+f.indentSize)
 	// }
 	// return
+
+	// for _, idx := range eachChild(node) {
+	// 	field := node.FieldNameForChild(int(idx))
+	// 	if field != "" {
+	// 		fmt.Println("--- field:", field)
+	// 		fieldNode := node.ChildByFieldName(field)
+	// 		for ch := range eachChild(fieldNode) {
+	// 			fmt.Println("------ type:", ch.Type())
+	// 		}
+	// 	}
+	// }
 
 	// Handle top level expressions
 	if node.Type() == "expressions" && node.Parent() == nil {
@@ -559,6 +640,9 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "string":
 		f.formatString(node)
 
+	case "array":
+		f.formatArray(node)
+
 	case "integer":
 		f.formatLiteral(node)
 
@@ -589,12 +673,15 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "symbol":
 		f.formatSymbol(node)
 
+	case "proc_type":
+		f.formatProcType(node)
+
 	case "ERROR":
 		f.err = errors.New(node.Content(f.source))
 		return
 
 	default:
-		fmt.Println("--- caught:", node.Type())
+		// fmt.Println("--- caught:", node.Type())
 		// Fallback to just printing the raw source content for unknown types
 		f.writeContent(node)
 	}
@@ -632,6 +719,19 @@ func eachChild(node *sitter.Node) iter.Seq2[*sitter.Node, uint32] {
 			ch := node.Child(int(idx))
 			if !yield(ch, idx) {
 				return
+			}
+		}
+	}
+}
+
+func eachChildByFieldName(node *sitter.Node, field string) iter.Seq2[*sitter.Node, uint32] {
+	return func(yield func(*sitter.Node, uint32) bool) {
+		for ch, idx := range eachChild(node) {
+			chField := node.FieldNameForChild(int(idx))
+			if chField == field {
+				if !yield(ch, idx) {
+					return
+				}
 			}
 		}
 	}
