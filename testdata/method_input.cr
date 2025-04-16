@@ -125,19 +125,26 @@ method(&.[index])
 
 # Yield value
 def twice(&)
-    v1 = yield 1
-    puts v1
+v1 = yield 1
+puts v1
 
-    v2 = yield 2
-    puts v2
+v2 = yield 2
+puts v2
 end
 
 twice do |i|
-    i + 1
+i + 1
 end
 
 # Type restrictions
 def transform_int(start : Int32, &block : Int32 -> Int32)
-    result = yield start
-    result * 2
+result = yield start
+result * 2
+end
+
+# Break in block call
+thrice do |i|
+if i == 2
+break
+end
 end

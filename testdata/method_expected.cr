@@ -145,3 +145,10 @@ def transform_int(start : Int32, &block : Int32 -> Int32)
     result = yield start
     result * 2
 end
+
+# Break in block call
+thrice do |i|
+    if i == 2
+        break
+    end
+end
