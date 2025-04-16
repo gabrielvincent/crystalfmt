@@ -205,8 +205,6 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 		switch ch.Type() {
 		case "do":
 			f.writeString(" do")
-		case "param_list":
-			f.formatParams(ch)
 		case "expressions":
 			f.writeLF()
 			f.formatNode(ch, indent+f.indentSize)
@@ -462,8 +460,6 @@ func (f *Formatter) formatConditional(node *sitter.Node, indent int) {
 			case "expressions":
 				f.formatExpressions(ch, indent, false)
 			case "?", ":":
-				f.writeLF()
-				f.writeIndent(indent)
 				f.writeByte(' ')
 				f.writeContent(ch)
 				f.writeByte(' ')
