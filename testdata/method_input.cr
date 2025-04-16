@@ -36,12 +36,16 @@ def messy_defaults(a, b= 1, c ="hello"   , d =  42)
 # this is intentionally messy
 end
 
-def with_block(&block)
-  yield if block_given?
-  puts "Done with block"
+def with_block( &block  )
+yield if 0 == 0
+puts "Done with block"
 end
 
-def messy_yield   
-yield(1,2,  3)
- yield   
+with_block do
+puts   "grila"
+end
+
+def messy_yield
+yield(1  , 2, 3)
+        yield
 end

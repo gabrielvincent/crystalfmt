@@ -204,14 +204,17 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 	forEachChild(node, func(ch *sitter.Node) {
 		switch ch.Type() {
 		case "do":
-			f.strBuilder.WriteString(" do ")
+			f.writeString(" do")
 		case "param_list":
 			f.formatParams(ch)
 		case "expressions":
-			f.strBuilder.WriteByte('\n')
+			f.writeLF()
 			f.formatNode(ch, indent+f.indentSize)
-		default:
+		case "end":
+			f.writeLF()
 			f.writeContent(ch)
+		default:
+			f.formatNode(ch, indent)
 		}
 	})
 
@@ -501,7 +504,6 @@ func (f *Formatter) formatYield(node *sitter.Node) {
 }
 
 func (f *Formatter) formatModifierIf(node *sitter.Node) {
-	f.formatIf(node, 0)
 	thenNode := node.ChildByFieldName("then")
 	f.formatNode(thenNode, 0)
 
