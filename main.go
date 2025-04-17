@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -64,6 +63,7 @@ func main() {
 	if f.err != nil {
 		shouldWrite = false
 		formatted = string(source)
+		fmt.Printf("Unable to format. Error: %s", f.err.Error())
 	}
 
 	if shouldWrite {
@@ -72,10 +72,10 @@ func main() {
 			fmt.Printf("Failed to write file: %v\n", err)
 			os.Exit(1)
 		}
+		fmt.Printf("%s was formatted", filename)
 	} else {
-		fmt.Println(formatted)
+		fmt.Print(formatted)
 	}
-
 }
 
 func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
@@ -320,6 +320,12 @@ func (f *Formatter) formatBlockParam(node *sitter.Node) {
 	}
 }
 
+func (f *Formatter) formatSplatParam(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		f.writeContent(ch)
+	}
+}
+
 func (f *Formatter) formatParam(node *sitter.Node) {
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
 		f.formatNode(nameNode, 0)
@@ -356,13 +362,15 @@ func (f *Formatter) formatParamList(node *sitter.Node) {
 			f.formatParam(ch)
 		case "block_param":
 			f.formatBlockParam(ch)
+		case "splat_param":
+			f.formatSplatParam(ch)
 		case ",":
 			f.writeString(", ")
 		case "ERROR":
 			// Workaround to support splat parameters
 			content := f.getContent(ch)
 			if content == "*" {
-				f.writeContent(ch)
+				f.writeString(content)
 			}
 		}
 
@@ -441,12 +449,14 @@ func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline bool) {
 	for ch := range eachChild(node) {
+		isInlineComment := false
 		if prev := ch.PrevSibling(); prev != nil {
 			prevEnd := getAbsPosition(prev.EndPoint(), f.lineStartPositions)
 			currStart := getAbsPosition(ch.StartPoint(), f.lineStartPositions)
 			between := f.source[prevEnd:currStart]
 
 			if ch.Type() == "comment" && countLF(between) == 0 {
+				isInlineComment = true
 				f.writeByte(' ')
 			} else {
 				switch prev.Type() {
@@ -462,7 +472,9 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline b
 			}
 		}
 
-		f.writeIndent(indent)
+		if !isInlineComment {
+			f.writeIndent(indent)
+		}
 		f.formatNode(ch, indent)
 	}
 }
@@ -690,6 +702,16 @@ func (f *Formatter) formatTuple(node *sitter.Node) {
 	}
 }
 
+func (f *Formatter) workaroundNestedParens(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		f.writeContent(ch)
+		switch ch.Type() {
+		case ",":
+			f.writeByte(' ')
+		}
+	}
+}
+
 // Recursive function to format the syntax tree
 func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
@@ -799,12 +821,15 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "implicit_object_call":
 		f.formatImplicitObjectCall(node)
 
+	case "splat":
+		f.formatSplatParam(node)
+
 	case "(", ")", "[", "]", "{", "}", ",", ".", "break", "&":
 		f.writeContent(node)
 
 	case "ERROR":
-		f.err = errors.New(node.Content(f.source))
-		return
+		fmt.Println("--- got error:", f.getContent(node))
+		f.writeContent(node)
 
 	default:
 		fmt.Println("--- caught:", node.Type())

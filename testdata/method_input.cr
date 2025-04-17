@@ -199,23 +199,24 @@ array.each do |arg|
 end
 
 # Parameter unpacking can be nested.
-array1 = [
+ary = [
     {1, {2, {3, 4}}},
 ]
 
-array1.each do |(w, (x, (y, z)))|
-    w # => 1
-    x # => 2
-    y # => 3
-    z # => 4
-end
+# Tree Sitter parses parameter unpacking as error
+# ary.each do |(w, (x, (y, z)))|
+#     w # => 1
+#     x # => 2
+#     y # => 3
+#     z # => 4
+# end
 
 # Splat parameters are supported.
-array2 = [
+ary = [
     [1, 2, 3, 4, 5],
 ]
 
-array2.each do |(x, *y, z)|
+ary.each do |(x, *y, z)|
     x # => 1
     y # => [2, 3, 4]
     z # => 5
