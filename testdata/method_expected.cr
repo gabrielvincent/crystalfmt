@@ -168,3 +168,18 @@ twice { |i|
     end
     i + 1
 }
+
+# With ... yield
+class Foo
+    def one
+        1
+    end
+
+    def yield_with_self(&)
+        with self yield
+    end
+
+    def yield_normally(&)
+        yield
+    end
+end

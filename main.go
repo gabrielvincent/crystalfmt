@@ -432,14 +432,12 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline b
 					f.writeLF()
 					f.writeLF()
 				default:
-
 					f.writeLF()
 					if hasTwoNewlines(between) {
 						f.writeLF()
 					}
 				}
 			}
-
 		}
 
 		f.writeIndent(indent)
@@ -544,6 +542,14 @@ func (f *Formatter) formatYield(node *sitter.Node) {
 	for ch := range eachChild(node) {
 		switch ch.Type() {
 		case "yield":
+			// if previous sibling does not end in '\n', prepend a ' '
+			if sib := ch.PrevSibling(); sib != nil {
+				endPos := getAbsPosition(sib.Range().EndPoint, f.lineStartPositions)
+				endByte := f.source[endPos]
+				if endByte != '\n' {
+					f.writeByte(' ')
+				}
+			}
 			f.writeContent(ch)
 		case "argument_list":
 			if ch.Child(0).Type() != "(" {
@@ -551,7 +557,7 @@ func (f *Formatter) formatYield(node *sitter.Node) {
 			}
 			f.formatNode(ch, 0)
 		default:
-			f.writeByte(' ')
+			// f.writeByte(' ')
 			f.formatNode(ch, 0)
 		}
 	}
@@ -589,6 +595,19 @@ func (f *Formatter) formatProcType(node *sitter.Node) {
 			f.formatNode(ch, 0)
 		}
 	}
+}
+
+func (f *Formatter) formatWith(node *sitter.Node) {
+	f.writeContent(node)
+}
+
+func (f *Formatter) formatSelf(node *sitter.Node) {
+	if sib := node.PrevSibling(); sib != nil {
+		if sib.Type() == "with" {
+			f.writeByte(' ')
+		}
+	}
+	f.writeContent(node)
 }
 
 // Recursive function to format the syntax tree
@@ -682,12 +701,18 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "proc_type":
 		f.formatProcType(node)
 
+	case "with":
+		f.formatWith(node)
+
+	case "self":
+		f.formatSelf(node)
+
 	case "ERROR":
 		f.err = errors.New(node.Content(f.source))
 		return
 
 	default:
-		// fmt.Println("--- caught:", node.Type())
+		fmt.Println("--- caught:", node.Type())
 		// Fallback to just printing the raw source content for unknown types
 		f.writeContent(node)
 	}
@@ -700,7 +725,7 @@ func (f *Formatter) writeIndent(indent int) {
 }
 
 func (f *Formatter) writeContent(node *sitter.Node) {
-	f.strBuilder.WriteString(node.Content(f.source))
+	f.strBuilder.WriteString(f.getContent(node))
 }
 
 func (f *Formatter) writeString(str string, a ...any) {
