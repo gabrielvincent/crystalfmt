@@ -274,6 +274,8 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 			f.writeContent(ch)
 		case "}":
 			f.writeContent(ch)
+		case "param_list":
+			f.formatNode(ch, indent)
 		case "expressions":
 			f.writeLF()
 			f.formatExpressions(ch, indent+f.indentSize, true)
@@ -283,6 +285,18 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 		default:
 			f.formatNode(ch, indent)
 		}
+	}
+}
+
+func (f *Formatter) formatBlockArgument(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		f.formatNode(ch, 0)
+	}
+}
+
+func (f *Formatter) formatImplicitObjectCall(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		f.formatNode(ch, 0)
 	}
 }
 
@@ -333,9 +347,11 @@ func (f *Formatter) formatParam(node *sitter.Node) {
 	}
 }
 
-func (f *Formatter) formatParams(node *sitter.Node) {
+func (f *Formatter) formatParamList(node *sitter.Node) {
 	for ch := range eachChild(node) {
 		switch ch.Type() {
+		case "(", ")":
+			f.writeContent(ch)
 		case "param":
 			f.formatParam(ch)
 		case "block_param":
@@ -446,9 +462,15 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline b
 }
 
 func (f *Formatter) formatOperator(node *sitter.Node) {
-	f.writeByte(' ')
-	f.writeContent(node)
-	f.writeByte(' ')
+	content := f.getContent(node)
+	switch content {
+	case "[", ".+":
+		f.writeString(content)
+	default:
+		f.writeByte(' ')
+		f.writeContent(node)
+		f.writeByte(' ')
+	}
 }
 
 func (f *Formatter) formatIf(node *sitter.Node, indent int) {
@@ -584,6 +606,12 @@ func (f *Formatter) formatArray(node *sitter.Node) {
 	}
 }
 
+func (f *Formatter) formatIndexCall(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		f.formatNode(ch, 0)
+	}
+}
+
 func (f *Formatter) formatProcType(node *sitter.Node) {
 	for ch := range eachChild(node) {
 		switch ch.Type() {
@@ -608,6 +636,18 @@ func (f *Formatter) formatSelf(node *sitter.Node) {
 		}
 	}
 	f.writeContent(node)
+}
+
+func (f *Formatter) formatTuple(node *sitter.Node) {
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case ",":
+			f.formatNode(ch, 0)
+			f.writeByte(' ')
+		default:
+			f.formatNode(ch, 0)
+		}
+	}
 }
 
 // Recursive function to format the syntax tree
@@ -654,7 +694,7 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.formatCall(node, indent)
 
 	case "param_list":
-		f.formatParams(node)
+		f.formatParamList(node)
 
 	case "argument_list":
 		f.formatArguments(node, indent)
@@ -662,11 +702,17 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	case "block":
 		f.formatBlock(node, indent)
 
+	case "block_argument":
+		f.formatBlockArgument(node)
+
 	case "string":
 		f.formatString(node)
 
 	case "array":
 		f.formatArray(node)
+
+	case "index_call":
+		f.formatIndexCall(node)
 
 	case "integer":
 		f.formatLiteral(node)
@@ -706,6 +752,15 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
 	case "self":
 		f.formatSelf(node)
+
+	case "tuple":
+		f.formatTuple(node)
+
+	case "implicit_object_call":
+		f.formatImplicitObjectCall(node)
+
+	case "(", ")", "[", "]", "{", "}", ",", ".", "break", "&":
+		f.writeContent(node)
 
 	case "ERROR":
 		f.err = errors.New(node.Content(f.source))

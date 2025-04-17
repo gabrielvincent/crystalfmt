@@ -183,3 +183,9 @@ class Foo
         yield
     end
 end
+
+# Unpacking block params
+array = [{1, "one"}, {2, "two"}]
+array.each do |(number, word)|
+    puts "#{number}: #{word}"
+end
