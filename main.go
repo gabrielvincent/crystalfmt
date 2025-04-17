@@ -358,6 +358,12 @@ func (f *Formatter) formatParamList(node *sitter.Node) {
 			f.formatBlockParam(ch)
 		case ",":
 			f.writeString(", ")
+		case "ERROR":
+			// Workaround to support splat parameters
+			content := f.getContent(ch)
+			if content == "*" {
+				f.writeContent(ch)
+			}
 		}
 
 	}
@@ -594,14 +600,48 @@ func (f *Formatter) formatModifierIf(node *sitter.Node) {
 	f.formatNode(condNode, 0)
 }
 
-func (f *Formatter) formatArray(node *sitter.Node) {
+func (f *Formatter) formatArray(node *sitter.Node, indent int) {
+
+	var brackOpenNode *sitter.Node
+	var brackCloseNode *sitter.Node
+	for ch := range eachChild(node) {
+		switch ch.Type() {
+		case "[":
+			brackOpenNode = ch
+		case "]":
+			brackCloseNode = ch
+		}
+	}
+	isMultiline := f.hasByteBetweenNodes('\n', brackOpenNode, brackCloseNode)
+
 	for ch := range eachChild(node) {
 		switch ch.Type() {
 		case ",":
 			f.writeContent(ch)
-			f.writeByte(' ')
+			if !isMultiline {
+				f.writeByte(' ')
+			}
+		case "[":
+			f.writeContent(ch)
+		case "]":
+			if isMultiline {
+				f.writeLF()
+				f.writeIndent(indent)
+			}
+			f.writeContent(ch)
+
 		default:
-			f.formatNode(ch, 0)
+			if isMultiline {
+				f.writeLF()
+				f.writeIndent(indent + f.indentSize)
+			}
+
+			f.formatNode(ch, indent+f.indentSize)
+
+			// Add trailing comma to multiline array
+			if next := ch.NextSibling(); next != nil && next.Type() == "]" && isMultiline {
+				f.writeByte(',')
+			}
 		}
 	}
 }
@@ -709,12 +749,12 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.formatString(node)
 
 	case "array":
-		f.formatArray(node)
+		f.formatArray(node, indent)
 
 	case "index_call":
 		f.formatIndexCall(node)
 
-	case "integer":
+	case "integer", "float":
 		f.formatLiteral(node)
 
 	case "identifier":
@@ -799,6 +839,14 @@ func (f *Formatter) getContent(node *sitter.Node) string {
 	return node.Content(f.source)
 }
 
+func (f *Formatter) getNodeStartPosition(node *sitter.Node) int {
+	return getAbsPosition(node.Range().StartPoint, f.lineStartPositions)
+}
+
+func (f *Formatter) getNodeEndPosition(node *sitter.Node) int {
+	return getAbsPosition(node.Range().EndPoint, f.lineStartPositions)
+}
+
 func eachChild(node *sitter.Node) iter.Seq2[*sitter.Node, uint32] {
 	return func(yield func(*sitter.Node, uint32) bool) {
 		for idx := range node.ChildCount() {
@@ -862,6 +910,18 @@ func buildLineStartPositions(source []byte) []int {
 	}
 
 	return positions
+}
+
+func (f *Formatter) hasByteBetweenNodes(b byte, startNode *sitter.Node, endNode *sitter.Node) bool {
+	startPos := f.getNodeStartPosition(startNode)
+	endPos := f.getNodeEndPosition(endNode)
+	between := f.source[startPos:endPos]
+	for _, c := range between {
+		if c == b {
+			return true
+		}
+	}
+	return false
 }
 
 func hasTwoNewlines(b []byte) bool {

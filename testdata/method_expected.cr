@@ -189,3 +189,34 @@ array = [{1, "one"}, {2, "two"}]
 array.each do |(number, word)|
     puts "#{number}: #{word}"
 end
+
+# The above is simply syntax sugar of this:
+array = [{1, "one"}, {2, "two"}]
+array.each do |arg|
+    number = arg[0]
+    word = arg[1]
+    puts "#{number}: #{word}"
+end
+
+# Parameter unpacking can be nested.
+array1 = [
+    {1, {2, {3, 4}}},
+]
+
+array1.each do |(w, (x, (y, z)))|
+    w # => 1
+    x # => 2
+    y # => 3
+    z # => 4
+end
+
+# Splat parameters are supported.
+array2 = [
+    [1, 2, 3, 4, 5],
+]
+
+array2.each do |(x, *y, z)|
+    x # => 1
+    y # => [2, 3, 4]
+    z # => 5
+end
