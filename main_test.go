@@ -1,15 +1,14 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/crystal"
+	crystal "github.com/crystal-lang-tools/tree-sitter-crystal/bindings/go"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func TestFormatter(t *testing.T) {
@@ -55,12 +54,17 @@ func runFormatTest(t *testing.T, inputPath, expectedPath string) {
 		}
 
 		// Set up Tree-sitter parser
-		parser := sitter.NewParser()
-		parser.SetLanguage(crystal.GetLanguage())
-		tree, err := parser.ParseCtx(context.Background(), nil, input)
-		if err != nil {
-			fmt.Println("--- Parsing failed:", err)
+		lang := sitter.NewLanguage(crystal.Language())
+		if lang == nil {
+			panic("Unable to load crystal")
 		}
+		parser := sitter.NewParser()
+		err = parser.SetLanguage(lang)
+		if err != nil {
+			fmt.Println("--- failed to set language:", err)
+		}
+
+		tree := parser.Parse(input, nil)
 
 		f := Formatter{
 			strBuilder:         &strings.Builder{},

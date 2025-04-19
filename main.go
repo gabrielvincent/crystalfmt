@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"iter"
 	"os"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/crystal"
+	crystal "github.com/crystal-lang-tools/tree-sitter-crystal/bindings/go"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 var INDENT_SIZE = 4
@@ -35,12 +34,17 @@ func main() {
 	}
 
 	// Set up Tree-sitter parser
-	parser := sitter.NewParser()
-	parser.SetLanguage(crystal.GetLanguage())
-	tree, err := parser.ParseCtx(context.Background(), nil, source)
-	if err != nil {
-		fmt.Println("--- Parsing failed:", err)
+	lang := sitter.NewLanguage(crystal.Language())
+	if lang == nil {
+		panic("Unable to load crystal")
 	}
+	parser := sitter.NewParser()
+	err = parser.SetLanguage(lang)
+	if err != nil {
+		fmt.Println("--- failed to set language:", err)
+	}
+
+	tree := parser.Parse(source, nil)
 
 	f := Formatter{
 		strBuilder:         &strings.Builder{},
@@ -92,7 +96,7 @@ func (f *Formatter) formatMethod(node *sitter.Node, indent int) {
 	}
 
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "comment":
 			f.writeLF()
 			f.writeIndent(indent + f.indentSize)
@@ -137,7 +141,7 @@ func (f *Formatter) formatClass(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatRequire(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "require":
 			f.strBuilder.WriteString("require")
 			f.strBuilder.WriteByte(' ')
@@ -149,7 +153,7 @@ func (f *Formatter) formatRequire(node *sitter.Node) {
 
 func (f *Formatter) formatString(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case `"`:
 			f.writeByte('"')
 		case "literal_content":
@@ -162,7 +166,7 @@ func (f *Formatter) formatString(node *sitter.Node) {
 
 func (f *Formatter) formatInterpolation(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "#{", "}":
 			f.writeContent(ch)
 		default:
@@ -193,13 +197,13 @@ func (f *Formatter) formatComment(node *sitter.Node) {
 func (f *Formatter) formatBlockOneLiner(node *sitter.Node, indent int) {
 	bodyNode := node.ChildByFieldName("body")
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "do":
 			f.writeByte(' ')
 			f.writeContent(ch)
 		case "|":
 			next := ch.NextSibling()
-			switch next.Type() {
+			switch next.Kind() {
 			case "param_list":
 				f.writeByte(' ')
 				f.writeContent(ch)
@@ -231,7 +235,7 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 	var blockDelimiterStart int
 	var blockDelimiterEnd int
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "do", "{":
 			blockDelimiterStart = getAbsPosition(ch.Range().EndPoint, f.lineStartPositions)
 		case "end", "}":
@@ -255,13 +259,13 @@ func (f *Formatter) formatBlock(node *sitter.Node, indent int) {
 	}
 
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "do":
 			f.writeByte(' ')
 			f.writeContent(ch)
 		case "|":
 			next := ch.NextSibling()
-			switch next.Type() {
+			switch next.Kind() {
 			case "param_list":
 				f.writeByte(' ')
 				f.writeContent(ch)
@@ -310,7 +314,7 @@ func (f *Formatter) formatSymbol(node *sitter.Node) {
 
 func (f *Formatter) formatBlockParam(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "&", "identifier":
 			f.writeContent(ch)
 		case "proc_type":
@@ -332,7 +336,7 @@ func (f *Formatter) formatParam(node *sitter.Node) {
 	}
 
 	for typeNode := range eachChildByFieldName(node, "type") {
-		switch typeNode.Type() {
+		switch typeNode.Kind() {
 		case ":":
 			f.writeString(" : ")
 		default:
@@ -343,7 +347,7 @@ func (f *Formatter) formatParam(node *sitter.Node) {
 	if defaultAssignNode := node.ChildByFieldName("default"); defaultAssignNode != nil {
 		f.writeString(" = ")
 		if defaultRhsNode := defaultAssignNode.NextNamedSibling(); defaultRhsNode != nil {
-			switch defaultRhsNode.Type() {
+			switch defaultRhsNode.Kind() {
 			case "expressions":
 				f.formatExpressions(defaultRhsNode, 0, false)
 			default:
@@ -355,7 +359,7 @@ func (f *Formatter) formatParam(node *sitter.Node) {
 
 func (f *Formatter) formatParamList(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "(", ")":
 			f.writeContent(ch)
 		case "param":
@@ -386,7 +390,7 @@ func (f *Formatter) formatAssign(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatCall(node *sitter.Node, indent int) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "expressions":
 			f.formatExpressions(ch, indent, false)
 		case "argument_list":
@@ -394,10 +398,10 @@ func (f *Formatter) formatCall(node *sitter.Node, indent int) {
 			var firstChildType string
 
 			if ch.PrevSibling() != nil {
-				prevType = ch.PrevSibling().Type()
+				prevType = ch.PrevSibling().Kind()
 			}
 			if ch.ChildCount() > 0 {
-				firstChildType = ch.Child(0).Type()
+				firstChildType = ch.Child(0).Kind()
 			}
 
 			// Check for a method call not using parentheses. If this is the case,
@@ -414,7 +418,7 @@ func (f *Formatter) formatCall(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatNamedExpr(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case ":":
 			f.writeString(": ")
 		default:
@@ -426,7 +430,7 @@ func (f *Formatter) formatNamedExpr(node *sitter.Node) {
 
 func (f *Formatter) formatArguments(node *sitter.Node, indent int) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case ",":
 			f.strBuilder.WriteString(", ")
 		case "expressions":
@@ -444,15 +448,15 @@ func (f *Formatter) formatExpressions(node *sitter.Node, indent int, multiline b
 	for ch := range eachChild(node) {
 		isInlineComment := false
 		if prev := ch.PrevSibling(); prev != nil {
-			prevEnd := getAbsPosition(prev.EndPoint(), f.lineStartPositions)
-			currStart := getAbsPosition(ch.StartPoint(), f.lineStartPositions)
+			prevEnd := getAbsPosition(prev.Range().EndPoint, f.lineStartPositions)
+			currStart := getAbsPosition(ch.Range().StartPoint, f.lineStartPositions)
 			between := f.source[prevEnd:currStart]
 
-			if ch.Type() == "comment" && countLF(between) == 0 {
+			if ch.Kind() == "comment" && countLF(between) == 0 {
 				isInlineComment = true
 				f.writeByte(' ')
 			} else {
-				switch prev.Type() {
+				switch prev.Kind() {
 				case "class_def", "method_def":
 					f.writeLF()
 					f.writeLF()
@@ -489,7 +493,7 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 	condNode := node.ChildByFieldName("cond")
 	if condNode != nil {
 		// Write condition
-		switch node.Type() {
+		switch node.Kind() {
 		case "if":
 			f.writeString("if")
 		case "elsif":
@@ -497,14 +501,14 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 		}
 		f.writeByte(' ')
 
-		if condNode.Type() == "expressions" {
+		if condNode.Kind() == "expressions" {
 			f.formatExpressions(condNode, indent, false)
 		} else {
 			f.formatNode(condNode, indent)
 		}
 
 		for ch := range eachChild(node) {
-			if ch.Type() == "comment" {
+			if ch.Kind() == "comment" {
 				f.writeLF()
 				f.writeIndent(indent + f.indentSize)
 				f.formatNode(ch, indent)
@@ -534,7 +538,7 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 			f.writeLF()
 			f.writeIndent(indent)
 			for ch := range eachChild(elseNode) {
-				switch ch.Type() {
+				switch ch.Kind() {
 				case "else":
 					f.writeContent(ch)
 					continue
@@ -554,7 +558,7 @@ func (f *Formatter) formatIf(node *sitter.Node, indent int) {
 
 func (f *Formatter) formatConditional(node *sitter.Node, indent int) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "expressions":
 			f.formatExpressions(ch, indent, false)
 		case "?", ":":
@@ -573,7 +577,7 @@ func (f *Formatter) formatConstant(node *sitter.Node) {
 
 func (f *Formatter) formatYield(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "yield":
 			// if previous sibling does not end in '\n', prepend a ' '
 			if sib := ch.PrevSibling(); sib != nil {
@@ -585,7 +589,7 @@ func (f *Formatter) formatYield(node *sitter.Node) {
 			}
 			f.writeContent(ch)
 		case "argument_list":
-			if ch.Child(0).Type() != "(" {
+			if ch.Child(0).Kind() != "(" {
 				f.writeByte(' ')
 			}
 			f.formatNode(ch, 0)
@@ -610,7 +614,7 @@ func (f *Formatter) formatArray(node *sitter.Node, indent int) {
 	var brackOpenNode *sitter.Node
 	var brackCloseNode *sitter.Node
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "[":
 			brackOpenNode = ch
 		case "]":
@@ -620,7 +624,7 @@ func (f *Formatter) formatArray(node *sitter.Node, indent int) {
 	isMultiline := f.hasByteBetweenNodes('\n', brackOpenNode, brackCloseNode)
 
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case ",":
 			f.writeContent(ch)
 			if !isMultiline {
@@ -644,7 +648,7 @@ func (f *Formatter) formatArray(node *sitter.Node, indent int) {
 			f.formatNode(ch, indent+f.indentSize)
 
 			// Add trailing comma to multiline array
-			if next := ch.NextSibling(); next != nil && next.Type() == "]" && isMultiline {
+			if next := ch.NextSibling(); next != nil && next.Kind() == "]" && isMultiline {
 				f.writeByte(',')
 			}
 		}
@@ -659,7 +663,7 @@ func (f *Formatter) formatIndexCall(node *sitter.Node) {
 
 func (f *Formatter) formatProcType(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "->":
 			f.writeByte(' ')
 			f.writeContent(ch)
@@ -676,7 +680,7 @@ func (f *Formatter) formatWith(node *sitter.Node) {
 
 func (f *Formatter) formatSelf(node *sitter.Node) {
 	if sib := node.PrevSibling(); sib != nil {
-		if sib.Type() == "with" {
+		if sib.Kind() == "with" {
 			f.writeByte(' ')
 		}
 	}
@@ -685,7 +689,7 @@ func (f *Formatter) formatSelf(node *sitter.Node) {
 
 func (f *Formatter) formatTuple(node *sitter.Node) {
 	for ch := range eachChild(node) {
-		switch ch.Type() {
+		switch ch.Kind() {
 		case ",":
 			f.formatNode(ch, 0)
 			f.writeByte(' ')
@@ -698,7 +702,7 @@ func (f *Formatter) formatTuple(node *sitter.Node) {
 func (f *Formatter) workaroundNestedParens(node *sitter.Node) {
 	for ch := range eachChild(node) {
 		f.writeContent(ch)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case ",":
 			f.writeByte(' ')
 		}
@@ -710,7 +714,7 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 
 	// for ch, idx := range eachChild(node) {
 	// 	field := node.FieldNameForChild(int(idx))
-	// 	fmt.Println(strings.Repeat(" ", indent) + node.Type())
+	// 	fmt.Println(strings.Repeat(" ", indent) + node.Kind())
 	// 	if field != "" {
 	// 		fmt.Println(strings.Repeat(" ", indent) + " field: " + field)
 	// 	}
@@ -724,12 +728,12 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 	// 		fmt.Println("--- field:", field)
 	// 		fieldNode := node.ChildByFieldName(field)
 	// 		for ch := range eachChild(fieldNode) {
-	// 			fmt.Println("------ type:", ch.Type())
+	// 			fmt.Println("------ type:", ch.Kind())
 	// 		}
 	// 	}
 	// }
 
-	switch node.Type() {
+	switch node.Kind() {
 	case "class_def":
 		f.formatClass(node, indent)
 
@@ -825,7 +829,7 @@ func (f *Formatter) formatNode(node *sitter.Node, indent int) {
 		f.writeContent(node)
 
 	default:
-		fmt.Println("--- caught:", node.Type())
+		fmt.Println("--- caught:", node.Kind())
 		// Fallback to just printing the raw source content for unknown types
 		f.writeContent(node)
 	}
@@ -854,7 +858,7 @@ func (f *Formatter) writeLF() {
 }
 
 func (f *Formatter) getContent(node *sitter.Node) string {
-	return node.Content(f.source)
+	return node.Utf8Text(f.source)
 }
 
 func (f *Formatter) getNodeStartPosition(node *sitter.Node) int {
@@ -865,10 +869,10 @@ func (f *Formatter) getNodeEndPosition(node *sitter.Node) int {
 	return getAbsPosition(node.Range().EndPoint, f.lineStartPositions)
 }
 
-func eachChild(node *sitter.Node) iter.Seq2[*sitter.Node, uint32] {
-	return func(yield func(*sitter.Node, uint32) bool) {
+func eachChild(node *sitter.Node) iter.Seq2[*sitter.Node, uint] {
+	return func(yield func(*sitter.Node, uint) bool) {
 		for idx := range node.ChildCount() {
-			ch := node.Child(int(idx))
+			ch := node.Child(idx)
 			if !yield(ch, idx) {
 				return
 			}
@@ -876,10 +880,10 @@ func eachChild(node *sitter.Node) iter.Seq2[*sitter.Node, uint32] {
 	}
 }
 
-func eachChildByFieldName(node *sitter.Node, field string) iter.Seq2[*sitter.Node, uint32] {
-	return func(yield func(*sitter.Node, uint32) bool) {
+func eachChildByFieldName(node *sitter.Node, field string) iter.Seq2[*sitter.Node, uint] {
+	return func(yield func(*sitter.Node, uint) bool) {
 		for ch, idx := range eachChild(node) {
-			chField := node.FieldNameForChild(int(idx))
+			chField := node.FieldNameForChild(uint32(idx))
 			if chField == field {
 				if !yield(ch, idx) {
 					return
