@@ -204,12 +204,12 @@ ary = [
 ]
 
 # Tree Sitter parses parameter unpacking as error
-# ary.each do |(w, (x, (y, z)))|
-#     w # => 1
-#     x # => 2
-#     y # => 3
-#     z # => 4
-# end
+ary.each do |(w, (x, (y, z)))|
+w # => 1
+x # => 2
+y # => 3
+z # => 4
+end
 
 # Splat parameters are supported.
 ary = [

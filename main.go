@@ -366,14 +366,7 @@ func (f *Formatter) formatParamList(node *sitter.Node) {
 			f.formatSplatParam(ch)
 		case ",":
 			f.writeString(", ")
-		case "ERROR":
-			// Workaround to support splat parameters
-			content := f.getContent(ch)
-			if content == "*" {
-				f.writeString(content)
-			}
 		}
-
 	}
 }
 
